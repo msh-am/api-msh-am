@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: msh_am_mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+
+  api:
+    build: .
+    container_name: msh_am_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - API_PORT=8000
+      - API_HOST=0.0.0.0
+      - MQTT_ENABLED=true
+      - MQTT_BROKER_HOST=mqtt
+      - MQTT_BROKER_PORT=1883
+      - MQTT_TOPIC_PREFIX=msh/AM/#
+      - API_TOKEN=${API_TOKEN:-msh_armenia_super_secret_token}
+      - DATABASE_PATH=/data/msh_am.sqlite3
+      - CORS_ORIGINS=https://msh.am,http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - api_data:/data
+    depends_on:
+      - mqtt
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  api_data:

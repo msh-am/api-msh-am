@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.env.*
+!.env.example
+
+# SQLite databases & WAL files
+data/*.sqlite3*
+*.sqlite3*
+
+# Nix
+result
+result-*
+.direnv/
+
+# Logs
+*.log
