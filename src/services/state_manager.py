@@ -89,7 +89,6 @@ class StateManager:
                         "longitude": node_dict.get("longitude"),
                         "altitude": node_dict.get("altitude"),
                         "region": node_dict.get("region") or settings.DEFAULT_REGION,
-                        "ignore_mqtt": bool(node_dict.get("ignore_mqtt", 0)),
                         "source": node_dict.get("source", "db"),
                     }
                 logger.info(f"Loaded {len(self._nodes)} nodes from SQLite database.")
@@ -111,7 +110,6 @@ class StateManager:
         role: Optional[str] = None,
         hw_model: Optional[str] = None,
         source: str = "potatomesh",
-        ignore_mqtt: bool = False,
     ) -> MeshNode:
         now_ms = int(time.time() * 1000)
 
@@ -137,7 +135,6 @@ class StateManager:
                 "longitude": existing.get("longitude"),
                 "altitude": existing.get("altitude"),
                 "region": existing.get("region", settings.DEFAULT_REGION),
-                "ignore_mqtt": ignore_mqtt or existing.get("ignore_mqtt", False),
                 "source": source,
             }
             self._nodes[node_id] = updated
@@ -149,8 +146,8 @@ class StateManager:
                 """
                 INSERT INTO nodes (
                     id, num, short_name, long_name, role, hw_model,
-                    last_heard, region, source, ignore_mqtt, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    last_heard, region, source, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     num = coalesce(excluded.num, nodes.num),
                     short_name = coalesce(excluded.short_name, nodes.short_name),
@@ -160,7 +157,6 @@ class StateManager:
                     last_heard = excluded.last_heard,
                     region = excluded.region,
                     source = excluded.source,
-                    ignore_mqtt = excluded.ignore_mqtt,
                     updated_at = excluded.updated_at;
                 """,
                 (
@@ -173,7 +169,6 @@ class StateManager:
                     now_ms,
                     updated["region"],
                     source,
-                    1 if ignore_mqtt else 0,
                     now_ms,
                     now_ms,
                 ),
@@ -304,10 +299,6 @@ class StateManager:
 
             node = self._nodes[node_id]
 
-            # Privacy filter: check ignore_mqtt
-            if node.get("ignore_mqtt") and settings.RESPECT_IGNORE_MQTT and source == "mqtt":
-                logger.info(f"Omitting position for node {node_id} (ignore_mqtt=True)")
-                return self._build_mesh_node(node)
 
             is_router = node.get("role") == "ROUTER"
             fuzzed_lat = self._fuzz_coordinate(latitude, is_router)

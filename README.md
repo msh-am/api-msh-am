@@ -128,9 +128,8 @@ docker compose up -d
 
 ## 🔒 Privacy & Safety Rules
 
-1. **`ignore_mqtt` respect**: When a node configures `lora.ignore_mqtt = true`, the API automatically drops and omits GPS coordinates from public endpoints.
-2. **Encrypted Channel Isolation**: Secondary encrypted channels (AES-256) are never decrypted or archived. Only metadata from public community channels (`AQ==`) is stored.
-3. **Optional Coordinate Fuzzing**: Can be enabled via `ENABLE_LOCATION_FUZZING=true` to truncate client coordinates to ~1 km radius to protect residential privacy.
+1. **Encrypted Channel Isolation**: Secondary encrypted channels (AES-256) are never decrypted or archived. Only metadata from public community channels (`AQ==`) is stored.
+2. **Optional Coordinate Fuzzing**: Can be enabled via `ENABLE_LOCATION_FUZZING=true` to truncate client coordinates to ~1 km radius to protect residential privacy.
 
 ---
 

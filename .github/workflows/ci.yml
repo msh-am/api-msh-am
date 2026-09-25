@@ -1,4 +1,4 @@
-name: CI Test Suite
+name: CI & Deployment
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 jobs:
   test:
+    name: Run Test Suite
     runs-on: ubuntu-latest
 
     steps:
@@ -28,3 +29,43 @@ jobs:
       - name: Run test suite
         run: |
           pytest -v
+
+  deploy:
+    name: Deploy to Allegoria
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Allegoria via SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.ALLEGORIA_SSH_KEY }}
+          SSH_HOST: ${{ secrets.ALLEGORIA_HOST || '91.132.162.198' }}
+          SSH_USER: ${{ secrets.ALLEGORIA_USER || 'root' }}
+          SSH_PORT: ${{ secrets.ALLEGORIA_PORT || '22' }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+          echo "[msh.am] Syncing API codebase to $SSH_HOST..."
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude '__pycache__' \
+            --exclude '.pytest_cache' \
+            --exclude 'data' \
+            --exclude 'tests' \
+            -e "ssh -i ~/.ssh/deploy_key -p $SSH_PORT" \
+            ./ "$SSH_USER@$SSH_HOST":/opt/msh-am/api/
+
+          echo "[msh.am] Rebuilding containers on $SSH_HOST..."
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" "/opt/msh-am/deploy.sh"
+
+          echo "[msh.am] Verifying API health..."
+          curl -fsS --retry 5 --retry-delay 2 "https://api.msh.am/healthz" || curl -fsS "http://$SSH_HOST:8000/healthz"
+          echo "[msh.am] API successfully deployed and healthy!"

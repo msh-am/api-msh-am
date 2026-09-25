@@ -68,7 +68,6 @@ def init_db() -> None:
                 altitude REAL,
                 region TEXT DEFAULT 'Armenia',
                 source TEXT DEFAULT 'unknown',
-                ignore_mqtt INTEGER DEFAULT 0,
                 raw_metadata TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL

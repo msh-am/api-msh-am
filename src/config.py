@@ -44,7 +44,6 @@ class Settings:
     # Privacy & Safety
     ENABLE_LOCATION_FUZZING: bool = os.getenv("ENABLE_LOCATION_FUZZING", "false").lower() in ("1", "true", "yes")
     FUZZING_DECIMALS: int = int(os.getenv("FUZZING_DECIMALS", "2"))  # ~1.1km precision
-    RESPECT_IGNORE_MQTT: bool = os.getenv("RESPECT_IGNORE_MQTT", "true").lower() in ("1", "true", "yes")
 
     # CORS
     CORS_ORIGINS: List[str] = [
