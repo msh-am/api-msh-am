@@ -62,10 +62,12 @@ For community home nodes using standard Meshtastic firmware over Wi-Fi:
   - **Server Address**: `mqtt.msh.am`
   - **Username**: `meshdev` (default)
   - **Password**: `large4cats` (default)
-  - **Uplink Enabled**: `YES`
-  - **Downlink Enabled**: `NO`
-  - **Topic Root**: `msh/AM`
-- The backend's background subscriber ingests and parses protobuf packets (`mesh_pb2`, `telemetry_pb2`, `portnums_pb2`, `config_pb2`) directly into the database.
+  - **Topic Root**: `/msh/EU_868/AM/`
+- The backend's background subscriber ingests and parses protobuf packets (`mesh_pb2`, `telemetry_pb2`, `portnums_pb2`, `config_pb2`, `mqtt_pb2`) directly into the database.
+- **Automatic Upstream Uplink**: Packets received on `mqtt.msh.am` are forwarded to the official public Meshtastic broker (`mqtt.meshtastic.org`) under `/msh/EU_868/AM/`, strictly enforcing:
+  - **`OkToMQTT`**: Only packets with `bitfield` bit 0 set (`1`) are relayed upstream.
+  - **`IgnoreMQTT`**: Packets from nodes opting out of MQTT are dropped.
+  - **Loop Prevention**: Packets already bearing `via_mqtt=True` are never re-uplinked.
 
 ---
 

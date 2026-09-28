@@ -200,3 +200,44 @@ async def test_mqtt_service_envelope_processing():
     assert node.longName == "kita home"
     assert node.hwModel == "RAK4631"
 
+
+@pytest.mark.anyio
+async def test_mqtt_encrypted_default_channel_decryption():
+    from src.services.crypto import try_decrypt_mesh_packet, DEFAULT_CHANNEL_KEY
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.backends import default_backend
+
+    # Create encrypted node info
+    user = mesh_pb2.User(
+        id="!0d8802c3",
+        long_name="kita home",
+        short_name="kitD",
+        hw_model=mesh_pb2.HardwareModel.RAK4631,
+        role=config_pb2.Config.DeviceConfig.Role.CLIENT_BASE,
+    )
+    data = mesh_pb2.Data(
+        portnum=portnums_pb2.PortNum.NODEINFO_APP,
+        payload=user.SerializeToString(),
+        bitfield=1,
+    )
+    plain_bytes = data.SerializeToString()
+
+    packet_id = 998877
+    from_id = 227017411
+
+    nonce = packet_id.to_bytes(4, "little") + from_id.to_bytes(4, "little") + b"\x00" * 8
+    cipher = Cipher(algorithms.AES(DEFAULT_CHANNEL_KEY), modes.CTR(nonce), backend=default_backend())
+    ciphertext = cipher.encryptor().update(plain_bytes)
+
+    enc_packet = mesh_pb2.MeshPacket()
+    enc_packet.id = packet_id
+    setattr(enc_packet, "from", from_id)
+    enc_packet.encrypted = ciphertext
+
+    # Decrypt
+    decrypted = try_decrypt_mesh_packet(enc_packet)
+    assert decrypted is True
+    assert enc_packet.HasField("decoded")
+    assert enc_packet.decoded.portnum == portnums_pb2.PortNum.NODEINFO_APP
+    assert enc_packet.decoded.bitfield == 1
+

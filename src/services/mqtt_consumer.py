@@ -17,6 +17,7 @@ from meshtastic.protobuf import mesh_pb2, telemetry_pb2, portnums_pb2, config_pb
 from src.config import settings
 from src.services.state_manager import state_manager
 from src.services.mqtt_uplink import mqtt_uplink
+from src.services.crypto import try_decrypt_mesh_packet
 
 logger = logging.getLogger("msh_am.mqtt")
 
@@ -156,6 +157,10 @@ class MQTTConsumer:
 
         rx_snr = packet.rx_snr if packet.rx_snr else None
         rx_rssi = packet.rx_rssi if packet.rx_rssi else None
+
+        # If packet is encrypted, attempt decryption with default community PSK (AQ==)
+        if not packet.HasField("decoded") and packet.encrypted:
+            try_decrypt_mesh_packet(packet)
 
         # Uplink eligible packet to upstream public MQTT broker (mqtt.meshtastic.org)
         # Enforces loop prevention (via_mqtt), OkToMQTT (bitfield bit 0), and IgnoreMQTT

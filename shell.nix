@@ -9,6 +9,7 @@ pkgs.mkShell {
     python313Packages.meshtastic
     python313Packages.pydantic
     python313Packages.httpx
+    python313Packages.cryptography
     python313Packages.pytest
     mosquitto
     sqlite
