@@ -136,6 +136,25 @@ ARMENIA_SEED_NODES = [
         "altitude": 1030.0,
         "region": "Yerevan",
     },
+    {
+        "id": "!0d8802c3",
+        "num": 227017411,
+        "short_name": "kitD",
+        "long_name": "kita home",
+        "role": "CLIENT_BASE",
+        "hw_model": "RAK4631",
+        "battery_level": 100,
+        "voltage": 4.15,
+        "channel_utilization": 2.0,
+        "air_util_tx": 0.5,
+        "snr": 10.0,
+        "rssi": -80.0,
+        "hops_away": 0,
+        "latitude": 40.1800,
+        "longitude": 44.5000,
+        "altitude": 1000.0,
+        "region": "Yerevan",
+    },
 ]
 
 
@@ -175,7 +194,7 @@ async def seed_direct():
             )
 
     stats = state_manager.get_stats()
-    print("\n✅ Seeding complete!")
+    print("\nSeeding complete.")
     print(f"Total Nodes: {stats.totalNodes}")
     print(f"Online Nodes: {stats.onlineNodes}")
     print(f"Active Routers: {stats.activeRouters}")
