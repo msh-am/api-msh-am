@@ -226,6 +226,16 @@ class MQTTConsumer:
         rssi: Optional[float],
         hops: int,
     ) -> None:
+        # Always register / refresh node activity on any received packet
+        await state_manager.touch_node(
+            node_id=node_id,
+            num=node_num,
+            snr=snr,
+            rssi=rssi,
+            hops=hops,
+            source="mqtt",
+        )
+
         # 1. NODEINFO_APP
         if portnum == portnums_pb2.PortNum.NODEINFO_APP:
             try:

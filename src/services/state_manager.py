@@ -106,6 +106,86 @@ class StateManager:
         """Return raw internal node dictionary including internal flags like ignore_mqtt."""
         return self._nodes.get(node_id)
 
+    async def touch_node(
+        self,
+        node_id: str,
+        num: Optional[int] = None,
+        snr: Optional[float] = None,
+        rssi: Optional[float] = None,
+        hops: int = 0,
+        source: str = "mqtt",
+    ) -> MeshNode:
+        """Register or refresh node activity when any packet is heard."""
+        now_ms = int(time.time() * 1000)
+        async with self._lock:
+            if node_id not in self._nodes:
+                self._nodes[node_id] = {
+                    "id": node_id,
+                    "num": num or 0,
+                    "shortName": node_id[-4:].upper() if len(node_id) >= 4 else "NODE",
+                    "longName": f"Node {node_id}",
+                    "role": "CLIENT",
+                    "hwModel": "UNKNOWN",
+                    "hopsAway": hops,
+                    "region": settings.DEFAULT_REGION,
+                    "lastHeard": now_ms,
+                    "snr": round(snr, 1) if snr is not None else None,
+                    "rssi": round(rssi, 1) if rssi is not None else None,
+                    "source": source,
+                    "ignore_mqtt": False,
+                }
+            else:
+                node = self._nodes[node_id]
+                node["lastHeard"] = now_ms
+                if num and not node.get("num"):
+                    node["num"] = num
+                if snr is not None:
+                    node["snr"] = round(snr, 1)
+                if rssi is not None:
+                    node["rssi"] = round(rssi, 1)
+                if hops:
+                    node["hopsAway"] = hops
+
+            node_copy = dict(self._nodes[node_id])
+
+        with db_session() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO nodes (
+                    id, num, short_name, long_name, role, hw_model,
+                    snr, rssi, hops_away, last_heard, region, source, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    num = coalesce(excluded.num, nodes.num),
+                    snr = coalesce(excluded.snr, nodes.snr),
+                    rssi = coalesce(excluded.rssi, nodes.rssi),
+                    hops_away = coalesce(excluded.hops_away, nodes.hops_away),
+                    last_heard = excluded.last_heard,
+                    updated_at = excluded.updated_at;
+                """,
+                (
+                    node_id,
+                    num or 0,
+                    node_copy.get("shortName", "NODE"),
+                    node_copy.get("longName", f"Node {node_id}"),
+                    node_copy.get("role", "CLIENT"),
+                    node_copy.get("hwModel", "UNKNOWN"),
+                    round(snr, 1) if snr is not None else None,
+                    round(rssi, 1) if rssi is not None else None,
+                    hops,
+                    now_ms,
+                    node_copy.get("region", settings.DEFAULT_REGION),
+                    source,
+                    now_ms,
+                    now_ms,
+                ),
+            )
+
+        mesh_node = self._build_mesh_node(node_copy)
+        return mesh_node
+
     async def update_node_info(
         self,
         node_id: str,
@@ -235,18 +315,29 @@ class StateManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE nodes SET
-                    battery_level = coalesce(?, battery_level),
-                    voltage = coalesce(?, voltage),
-                    channel_utilization = coalesce(?, channel_utilization),
-                    air_util_tx = coalesce(?, air_util_tx),
-                    snr = coalesce(?, snr),
-                    rssi = coalesce(?, rssi),
-                    last_heard = ?,
-                    updated_at = ?
-                WHERE id = ?;
+                INSERT INTO nodes (
+                    id, num, short_name, long_name, role, hw_model,
+                    battery_level, voltage, channel_utilization, air_util_tx,
+                    snr, rssi, last_heard, region, source, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    battery_level = coalesce(excluded.battery_level, nodes.battery_level),
+                    voltage = coalesce(excluded.voltage, nodes.voltage),
+                    channel_utilization = coalesce(excluded.channel_utilization, nodes.channel_utilization),
+                    air_util_tx = coalesce(excluded.air_util_tx, nodes.air_util_tx),
+                    snr = coalesce(excluded.snr, nodes.snr),
+                    rssi = coalesce(excluded.rssi, nodes.rssi),
+                    last_heard = excluded.last_heard,
+                    updated_at = excluded.updated_at;
                 """,
                 (
+                    node_id,
+                    node.get("num", 0),
+                    node.get("shortName", "NODE"),
+                    node.get("longName", f"Node {node_id}"),
+                    node.get("role", "CLIENT"),
+                    node.get("hwModel", "UNKNOWN"),
                     battery_level,
                     voltage,
                     channel_utilization,
@@ -254,8 +345,10 @@ class StateManager:
                     snr,
                     rssi,
                     now_ms,
+                    node.get("region", settings.DEFAULT_REGION),
+                    source,
                     now_ms,
-                    node_id,
+                    now_ms,
                 ),
             )
             cursor.execute(
@@ -327,16 +420,35 @@ class StateManager:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                UPDATE nodes SET
-                    latitude = ?,
-                    longitude = ?,
-                    altitude = ?,
-                    region = ?,
-                    last_heard = ?,
-                    updated_at = ?
-                WHERE id = ?;
+                INSERT INTO nodes (
+                    id, num, short_name, long_name, role, hw_model,
+                    latitude, longitude, altitude, region, last_heard, source, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    latitude = excluded.latitude,
+                    longitude = excluded.longitude,
+                    altitude = coalesce(excluded.altitude, nodes.altitude),
+                    region = excluded.region,
+                    last_heard = excluded.last_heard,
+                    updated_at = excluded.updated_at;
                 """,
-                (fuzzed_lat, fuzzed_lon, altitude, region, now_ms, now_ms, node_id),
+                (
+                    node_id,
+                    node.get("num", 0),
+                    node.get("shortName", "NODE"),
+                    node.get("longName", f"Node {node_id}"),
+                    node.get("role", "CLIENT"),
+                    node.get("hwModel", "UNKNOWN"),
+                    fuzzed_lat,
+                    fuzzed_lon,
+                    altitude,
+                    region,
+                    now_ms,
+                    node.get("source", "potatomesh"),
+                    now_ms,
+                    now_ms,
+                ),
             )
             cursor.execute(
                 """

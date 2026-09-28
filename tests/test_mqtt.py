@@ -225,7 +225,7 @@ async def test_mqtt_encrypted_default_channel_decryption():
     packet_id = 998877
     from_id = 227017411
 
-    nonce = packet_id.to_bytes(4, "little") + from_id.to_bytes(4, "little") + b"\x00" * 8
+    nonce = packet_id.to_bytes(8, "little") + from_id.to_bytes(4, "little") + b"\x00" * 4
     cipher = Cipher(algorithms.AES(DEFAULT_CHANNEL_KEY), modes.CTR(nonce), backend=default_backend())
     ciphertext = cipher.encryptor().update(plain_bytes)
 

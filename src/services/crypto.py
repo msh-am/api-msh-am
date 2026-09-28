@@ -43,8 +43,11 @@ def try_decrypt_mesh_packet(packet: mesh_pb2.MeshPacket) -> bool:
         return False
 
     try:
-        # Meshtastic AES-CTR nonce: 4 bytes packet_id (LE) + 4 bytes from_id (LE) + 8 null bytes
-        nonce = packet_id.to_bytes(4, "little") + from_num.to_bytes(4, "little") + b"\x00" * 8
+        # Meshtastic AES-CTR nonce layout (16 bytes):
+        # Bytes 0-7:  packet_id as uint64, Little-Endian
+        # Bytes 8-11: from_node as uint32, Little-Endian
+        # Bytes 12-15: 4 null bytes (counter starts at 0, Big-Endian)
+        nonce = packet_id.to_bytes(8, "little") + from_num.to_bytes(4, "little") + b"\x00" * 4
         cipher = Cipher(algorithms.AES(DEFAULT_CHANNEL_KEY), modes.CTR(nonce), backend=default_backend())
         decryptor = cipher.decryptor()
         decrypted_bytes = decryptor.update(packet.encrypted) + decryptor.finalize()
@@ -52,7 +55,7 @@ def try_decrypt_mesh_packet(packet: mesh_pb2.MeshPacket) -> bool:
         decoded = mesh_pb2.Data()
         decoded.ParseFromString(decrypted_bytes)
         packet.decoded.CopyFrom(decoded)
-        logger.debug(f"Successfully decrypted packet {packet_id} from node {from_num:08x}")
+        logger.info(f"Successfully decrypted packet {packet_id} from {from_num:08x} (portnum={decoded.portnum})")
         return True
     except Exception as e:
         # Expected for packets encrypted with a private secondary channel PSK
