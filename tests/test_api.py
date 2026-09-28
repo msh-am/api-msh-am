@@ -3,11 +3,8 @@ Automated test suite for Meshtastic Armenia API (api.msh.am).
 """
 
 import os
-import pytest
-from fastapi.testclient import TestClient
-
-import os
 import tempfile
+from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
@@ -19,8 +16,6 @@ test_db_file.close()
 os.environ["DATABASE_PATH"] = test_db_path
 os.environ["API_TOKEN"] = "test_armenia_token"
 os.environ["MQTT_ENABLED"] = "false"
-
-from pathlib import Path
 from src.config import settings
 from src.main import app
 from src.database import init_db
