@@ -117,9 +117,10 @@ class MQTTConsumer:
 
     def _on_message(self, client: mqtt.Client, userdata, msg: mqtt.MQTTMessage) -> None:
         try:
+            logger.info(f"Received MQTT message on {msg.topic} ({len(msg.payload)} bytes)")
             self._process_packet(msg.topic, msg.payload)
         except Exception as e:
-            logger.debug(f"Failed to process packet on topic {msg.topic}: {e}")
+            logger.warning(f"Failed to process packet on topic {msg.topic}: {e}")
 
     def _process_packet(self, topic: str, payload: bytes) -> None:
         """Parse incoming protobuf ServiceEnvelope or MeshPacket."""
@@ -142,12 +143,13 @@ class MQTTConsumer:
         except Exception:
             try:
                 packet.ParseFromString(payload)
-            except Exception:
-                # Encrypted packet or raw binary not matching protobuf schema
+            except Exception as e:
+                logger.info(f"Could not parse packet on {topic} as ServiceEnvelope or MeshPacket: {e}")
                 return
 
         from_num = getattr(packet, "from")
         if not from_num:
+            logger.info(f"Packet on {topic} has no from_num, ignoring")
             return
 
         node_id = node_num_to_id(from_num)
@@ -158,9 +160,18 @@ class MQTTConsumer:
         rx_snr = packet.rx_snr if packet.rx_snr else None
         rx_rssi = packet.rx_rssi if packet.rx_rssi else None
 
+        logger.info(
+            f"Processing packet on {topic}: node={node_id}, "
+            f"has_decoded={packet.HasField('decoded')}, has_encrypted={bool(packet.encrypted)}"
+        )
+
         # If packet is encrypted, attempt decryption with default community PSK (AQ==)
         if not packet.HasField("decoded") and packet.encrypted:
-            try_decrypt_mesh_packet(packet)
+            decrypted = try_decrypt_mesh_packet(packet)
+            if decrypted:
+                logger.info(f"Decrypted packet from {node_id} (portnum={packet.decoded.portnum})")
+            else:
+                logger.info(f"Encrypted packet from {node_id} could not be decrypted with default key")
 
         # Uplink eligible packet to upstream public MQTT broker (mqtt.meshtastic.org)
         # Enforces loop prevention (via_mqtt), OkToMQTT (bitfield bit 0), and IgnoreMQTT
