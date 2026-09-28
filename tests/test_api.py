@@ -206,3 +206,63 @@ def test_potatomesh_ingestion_and_msh_am_dashboard_query(client):
     assert "Aragats Backbone" in tg_data["formattedMarkdown"]
     assert "Yundin Repeater" in tg_data["formattedMarkdown"]
     assert "msh.am/dashboard" in tg_data["formattedMarkdown"]
+
+
+def test_online_24h_and_one_week_retention(client):
+    import time
+    from src.services.state_manager import state_manager
+
+    now_ms = int(time.time() * 1000)
+
+    # Node heard 10 hours ago -> Online (< 24h)
+    state_manager._nodes["!test_10h"] = {
+        "id": "!test_10h",
+        "num": 1001,
+        "shortName": "T10H",
+        "longName": "Test Node 10h",
+        "role": "CLIENT",
+        "hwModel": "HELTEC_V3",
+        "lastHeard": now_ms - (10 * 3600 * 1000),
+    }
+
+    # Node heard 2 days ago -> Offline (> 24h), but within 1 week (< 7d) -> included in Total
+    state_manager._nodes["!test_2d"] = {
+        "id": "!test_2d",
+        "num": 1002,
+        "shortName": "T2D",
+        "longName": "Test Node 2d",
+        "role": "CLIENT",
+        "hwModel": "HELTEC_V3",
+        "lastHeard": now_ms - (2 * 24 * 3600 * 1000),
+    }
+
+    # Node heard 8 days ago -> Inactive (> 7d) -> auto-removed from Total
+    state_manager._nodes["!test_8d"] = {
+        "id": "!test_8d",
+        "num": 1003,
+        "shortName": "T8D",
+        "longName": "Test Node 8d",
+        "role": "CLIENT",
+        "hwModel": "HELTEC_V3",
+        "lastHeard": now_ms - (8 * 24 * 3600 * 1000),
+    }
+
+    res = client.get("/api/nodes")
+    assert res.status_code == 200
+    nodes = res.json()["nodes"]
+    node_ids = [n["id"] for n in nodes]
+
+    # !test_10h should be present and online
+    n_10h = next((n for n in nodes if n["id"] == "!test_10h"), None)
+    assert n_10h is not None
+    assert n_10h["isOnline"] is True
+
+    # !test_2d should be present but offline
+    n_2d = next((n for n in nodes if n["id"] == "!test_2d"), None)
+    assert n_2d is not None
+    assert n_2d["isOnline"] is False
+
+    # !test_8d should be auto-removed from Total nodes
+    assert "!test_8d" not in node_ids
+    assert state_manager.get_node("!test_8d") is None
+

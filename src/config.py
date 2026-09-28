@@ -43,7 +43,8 @@ class Settings:
     MQTT_UPLINK_CLIENT_ID: str = os.getenv("MQTT_UPLINK_CLIENT_ID", "msh-am-uplink-gateway")
 
     # Mesh Network Parameters
-    ONLINE_THRESHOLD_SECONDS: int = int(os.getenv("ONLINE_THRESHOLD_SECONDS", "900"))  # 15 minutes
+    ONLINE_THRESHOLD_SECONDS: int = int(os.getenv("ONLINE_THRESHOLD_SECONDS", "86400"))  # 24 hours
+    NODE_RETENTION_SECONDS: int = int(os.getenv("NODE_RETENTION_SECONDS", "604800"))  # 7 days (1 week)
     INACTIVE_THRESHOLD_SECONDS: int = int(os.getenv("INACTIVE_THRESHOLD_SECONDS", "7200"))  # 2 hours
     DEFAULT_REGION: str = os.getenv("DEFAULT_REGION", "Armenia")
     PRESET_NAME: str = "MediumFast"

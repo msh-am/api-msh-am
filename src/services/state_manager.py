@@ -59,13 +59,14 @@ class StateManager:
         self._load_from_db()
 
     def _load_from_db(self) -> None:
-        """Hydrate in-memory state from SQLite upon startup."""
+        """Hydrate in-memory state from SQLite upon startup, loading nodes heard within the retention period."""
         try:
             from src.database import init_db
             init_db()
+            cutoff_ms = int((time.time() - settings.NODE_RETENTION_SECONDS) * 1000)
             with db_session() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM nodes;")
+                cursor.execute("SELECT * FROM nodes WHERE last_heard >= ?;", (cutoff_ms,))
                 rows = cursor.fetchall()
                 for row in rows:
                     node_dict = dict(row)
@@ -92,7 +93,7 @@ class StateManager:
                         "source": node_dict.get("source", "db"),
                         "ignore_mqtt": bool(node_dict.get("ignore_mqtt", 0)),
                     }
-                logger.info(f"Loaded {len(self._nodes)} nodes from SQLite database.")
+                logger.info(f"Loaded {len(self._nodes)} active nodes from SQLite database (retention: {settings.NODE_RETENTION_SECONDS}s).")
         except Exception as e:
             logger.warning(f"Failed to hydrate nodes from DB (first run?): {e}")
 
@@ -527,13 +528,29 @@ class StateManager:
             isOnline=is_online,
         )
 
+    def prune_expired_nodes(self) -> int:
+        """Evict nodes not heard within the retention period (1 week) from in-memory state."""
+        now_ms = int(time.time() * 1000)
+        cutoff_ms = now_ms - (settings.NODE_RETENTION_SECONDS * 1000)
+        expired_ids = [
+            node_id for node_id, n in list(self._nodes.items())
+            if n.get("lastHeard", 0) < cutoff_ms
+        ]
+        for node_id in expired_ids:
+            self._nodes.pop(node_id, None)
+        if expired_ids:
+            logger.info(f"Pruned {len(expired_ids)} nodes inactive for over 1 week from memory.")
+        return len(expired_ids)
+
     def get_all_nodes(self) -> List[MeshNode]:
-        """Return all nodes, ordered by last_heard desc."""
+        """Return all active nodes heard within the retention period (1 week), ordered by last_heard desc."""
+        self.prune_expired_nodes()
         nodes = [self._build_mesh_node(n) for n in self._nodes.values()]
         nodes.sort(key=lambda x: x.lastHeard, reverse=True)
         return nodes
 
     def get_node(self, node_id: str) -> Optional[MeshNode]:
+        self.prune_expired_nodes()
         raw = self._nodes.get(node_id)
         if not raw:
             return None
