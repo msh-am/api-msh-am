@@ -22,6 +22,7 @@ from src.routers import (
     health_router,
 )
 from src.services.mqtt_consumer import mqtt_consumer
+from src.services.mqtt_uplink import mqtt_uplink
 
 # Configure logging
 logging.basicConfig(
@@ -40,10 +41,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     loop = asyncio.get_running_loop()
     mqtt_consumer.start(loop)
 
+    # Start upstream MQTT uplink to public broker (mqtt.meshtastic.org)
+    mqtt_uplink.start()
+
     logger.info("api.msh.am is ready to serve.")
     yield
 
     logger.info("Shutting down api.msh.am...")
+    mqtt_uplink.stop()
     mqtt_consumer.stop()
     logger.info("Shutdown complete.")
 

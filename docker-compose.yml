@@ -25,8 +25,13 @@ services:
       - MQTT_BROKER_HOST=mqtt
       - MQTT_BROKER_PORT=1883
       - MQTT_USERNAME=${MQTT_USERNAME:-meshdev}
-      - MQTT_PASSWORD=${MQTT_PASSWORD:-large4cats}
-      - MQTT_TOPIC_PREFIX=msh/AM/#
+      - MQTT_TOPIC_PREFIX=msh/EU_868/AM/#
+      - MQTT_UPLINK_ENABLED=${MQTT_UPLINK_ENABLED:-true}
+      - MQTT_UPLINK_BROKER_HOST=${MQTT_UPLINK_BROKER_HOST:-mqtt.meshtastic.org}
+      - MQTT_UPLINK_BROKER_PORT=${MQTT_UPLINK_BROKER_PORT:-1883}
+      - MQTT_UPLINK_USERNAME=${MQTT_UPLINK_USERNAME:-meshdev}
+      - MQTT_UPLINK_PASSWORD=${MQTT_UPLINK_PASSWORD:-large4cats}
+      - MQTT_UPLINK_TOPIC_PREFIX=${MQTT_UPLINK_TOPIC_PREFIX:-/msh/EU_868/AM/}
       - API_TOKEN=${API_TOKEN:-msh_armenia_super_secret_token}
       - DATABASE_PATH=/data/msh_am.sqlite3
       - CORS_ORIGINS=https://msh.am,http://localhost:3000,http://127.0.0.1:3000

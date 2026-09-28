@@ -23,15 +23,24 @@ class Settings:
     DATA_DIR: Path = Path(os.getenv("DATA_DIR", "./data"))
     DATABASE_PATH: Path = Path(os.getenv("DATABASE_PATH", str(DATA_DIR / "msh_am.sqlite3")))
 
-    # MQTT Ingestion Configuration
+    # MQTT Ingestion Configuration (Local Broker: mqtt.msh.am)
     MQTT_ENABLED: bool = os.getenv("MQTT_ENABLED", "true").lower() in ("1", "true", "yes")
     MQTT_BROKER_HOST: str = os.getenv("MQTT_BROKER_HOST", "localhost")
     MQTT_BROKER_PORT: int = int(os.getenv("MQTT_BROKER_PORT", "1883"))
     MQTT_USERNAME: str | None = os.getenv("MQTT_USERNAME", "meshdev")
     MQTT_PASSWORD: str | None = os.getenv("MQTT_PASSWORD", "large4cats")
-    MQTT_TOPIC_PREFIX: str = os.getenv("MQTT_TOPIC_PREFIX", "msh/AM/#")
+    MQTT_TOPIC_PREFIX: str = os.getenv("MQTT_TOPIC_PREFIX", "msh/EU_868/AM/#")
     MQTT_FALLBACK_TOPIC: str = os.getenv("MQTT_FALLBACK_TOPIC", "msh/EU_868/#")
     MQTT_CLIENT_ID: str = os.getenv("MQTT_CLIENT_ID", "msh-am-api-ingestor")
+
+    # Upstream Public MQTT Uplink Configuration (mqtt.meshtastic.org)
+    MQTT_UPLINK_ENABLED: bool = os.getenv("MQTT_UPLINK_ENABLED", "true").lower() in ("1", "true", "yes")
+    MQTT_UPLINK_BROKER_HOST: str = os.getenv("MQTT_UPLINK_BROKER_HOST", "mqtt.meshtastic.org")
+    MQTT_UPLINK_BROKER_PORT: int = int(os.getenv("MQTT_UPLINK_BROKER_PORT", "1883"))
+    MQTT_UPLINK_USERNAME: str | None = os.getenv("MQTT_UPLINK_USERNAME", "meshdev")
+    MQTT_UPLINK_PASSWORD: str | None = os.getenv("MQTT_UPLINK_PASSWORD", "large4cats")
+    MQTT_UPLINK_TOPIC_PREFIX: str = os.getenv("MQTT_UPLINK_TOPIC_PREFIX", "/msh/EU_868/AM/")
+    MQTT_UPLINK_CLIENT_ID: str = os.getenv("MQTT_UPLINK_CLIENT_ID", "msh-am-uplink-gateway")
 
     # Mesh Network Parameters
     ONLINE_THRESHOLD_SECONDS: int = int(os.getenv("ONLINE_THRESHOLD_SECONDS", "900"))  # 15 minutes

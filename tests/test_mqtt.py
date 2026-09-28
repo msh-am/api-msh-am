@@ -111,4 +111,92 @@ async def test_mqtt_protobuf_dispatch():
 def test_default_mqtt_credentials():
     assert settings.MQTT_USERNAME == "meshdev"
     assert settings.MQTT_PASSWORD == "large4cats"
+    assert settings.MQTT_TOPIC_PREFIX == "msh/EU_868/AM/#"
+    assert settings.MQTT_UPLINK_TOPIC_PREFIX == "/msh/EU_868/AM/"
+
+
+def test_mqtt_uplink_rules():
+    from meshtastic.protobuf import mqtt_pb2
+    from src.services.mqtt_uplink import mqtt_uplink
+
+    # 1. OkToMQTT True: bitfield bit 0 set (1)
+    packet_ok = mesh_pb2.MeshPacket()
+    packet_ok.decoded.portnum = portnums_pb2.PortNum.TEXT_MESSAGE_APP
+    packet_ok.decoded.payload = b"Hello Armenia"
+    packet_ok.decoded.bitfield = 1  # Bit 0 set (OK_TO_MQTT)
+    setattr(packet_ok, "from", 227017411)  # kitD (!0d8802c3)
+
+    eligible, reason = mqtt_uplink.should_uplink(packet_ok, "!0d8802c3")
+    assert eligible is True
+    assert reason == "eligible"
+
+    # 2. OkToMQTT False: bitfield bit 0 not set (0)
+    packet_no_optin = mesh_pb2.MeshPacket()
+    packet_no_optin.decoded.portnum = portnums_pb2.PortNum.TEXT_MESSAGE_APP
+    packet_no_optin.decoded.payload = b"Local only message"
+    packet_no_optin.decoded.bitfield = 0  # Bit 0 not set
+    setattr(packet_no_optin, "from", 227017411)
+
+    eligible, reason = mqtt_uplink.should_uplink(packet_no_optin, "!0d8802c3")
+    assert eligible is False
+    assert "OK_TO_MQTT flag is not set" in reason
+
+    # 3. Loop prevention: via_mqtt True
+    packet_via_mqtt = mesh_pb2.MeshPacket()
+    packet_via_mqtt.via_mqtt = True
+    packet_via_mqtt.decoded.bitfield = 1
+    setattr(packet_via_mqtt, "from", 227017411)
+
+    eligible, reason = mqtt_uplink.should_uplink(packet_via_mqtt, "!0d8802c3")
+    assert eligible is False
+    assert "loop prevention" in reason
+
+    # 4. Encrypted packet without decoded
+    packet_encrypted = mesh_pb2.MeshPacket()
+    packet_encrypted.encrypted = b"some_ciphertext"
+    setattr(packet_encrypted, "from", 227017411)
+
+    eligible, reason = mqtt_uplink.should_uplink(packet_encrypted, "!0d8802c3")
+    assert eligible is False
+    assert "encrypted or missing decoded" in reason
+
+
+@pytest.mark.anyio
+async def test_mqtt_service_envelope_processing():
+    from meshtastic.protobuf import mqtt_pb2
+
+    # Verify ServiceEnvelope parsing in mqtt_consumer
+    user = mesh_pb2.User(
+        id="!0d8802c3",
+        long_name="kita home",
+        short_name="kitD",
+        hw_model=mesh_pb2.HardwareModel.RAK4631,
+        role=config_pb2.Config.DeviceConfig.Role.CLIENT_BASE,
+    )
+
+    inner_packet = mesh_pb2.MeshPacket()
+    setattr(inner_packet, "from", 227017411)
+    inner_packet.decoded.portnum = portnums_pb2.PortNum.NODEINFO_APP
+    inner_packet.decoded.payload = user.SerializeToString()
+    inner_packet.decoded.bitfield = 1
+
+    envelope = mqtt_pb2.ServiceEnvelope()
+    envelope.packet.CopyFrom(inner_packet)
+    envelope.channel_id = "LongFast"
+    envelope.gateway_id = "!0d8802c3"
+
+    payload = envelope.SerializeToString()
+
+    # Process via mqtt_consumer
+    mqtt_consumer._process_packet("/msh/EU_868/AM/2/c/LongFast/!0d8802c3", payload)
+
+    # Allow async dispatch to execute in state manager
+    import asyncio
+    await asyncio.sleep(0.05)
+
+    node = state_manager.get_node("!0d8802c3")
+    assert node is not None
+    assert node.shortName == "kitD"
+    assert node.longName == "kita home"
+    assert node.hwModel == "RAK4631"
 

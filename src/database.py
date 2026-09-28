@@ -68,11 +68,18 @@ def init_db() -> None:
                 altitude REAL,
                 region TEXT DEFAULT 'Armenia',
                 source TEXT DEFAULT 'unknown',
+                ignore_mqtt INTEGER DEFAULT 0,
                 raw_metadata TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
         """)
+
+        # Migration check: ensure ignore_mqtt column exists
+        try:
+            cursor.execute("ALTER TABLE nodes ADD COLUMN ignore_mqtt INTEGER DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
 
         # Telemetry history table
         cursor.execute("""

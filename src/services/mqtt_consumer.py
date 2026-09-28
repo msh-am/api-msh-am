@@ -13,9 +13,10 @@ from typing import Optional
 
 import paho.mqtt.client as mqtt
 
-from meshtastic.protobuf import mesh_pb2, telemetry_pb2, portnums_pb2, config_pb2
+from meshtastic.protobuf import mesh_pb2, telemetry_pb2, portnums_pb2, config_pb2, mqtt_pb2
 from src.config import settings
 from src.services.state_manager import state_manager
+from src.services.mqtt_uplink import mqtt_uplink
 
 logger = logging.getLogger("msh_am.mqtt")
 
@@ -87,9 +88,26 @@ class MQTTConsumer:
 
     def _on_connect(self, client: mqtt.Client, userdata, flags, rc, properties=None) -> None:
         if rc == 0:
-            logger.info(f"Connected to MQTT broker! Subscribing to topics: {settings.MQTT_TOPIC_PREFIX}, {settings.MQTT_FALLBACK_TOPIC}")
-            client.subscribe(settings.MQTT_TOPIC_PREFIX)
-            client.subscribe(settings.MQTT_FALLBACK_TOPIC)
+            topics_to_sub = set()
+            for prefix in [
+                settings.MQTT_TOPIC_PREFIX,
+                settings.MQTT_FALLBACK_TOPIC,
+                "msh/EU_868/AM/#",
+                "/msh/EU_868/AM/#",
+                "msh/AM/#",
+                "/msh/AM/#",
+                "msh/EU_868/#",
+            ]:
+                if prefix:
+                    topics_to_sub.add(prefix)
+                    clean = prefix.lstrip("/")
+                    topics_to_sub.add(clean)
+                    topics_to_sub.add("/" + clean)
+
+            subscribed_list = sorted(list(topics_to_sub))
+            logger.info(f"Connected to MQTT broker! Subscribing to topics: {', '.join(subscribed_list)}")
+            for t in subscribed_list:
+                client.subscribe(t)
         else:
             logger.error(f"MQTT connection refused with result code {rc}")
 
@@ -107,13 +125,17 @@ class MQTTConsumer:
         if not payload:
             return
 
-        envelope = mesh_pb2.ServiceEnvelope()
+        envelope = mqtt_pb2.ServiceEnvelope()
         packet = mesh_pb2.MeshPacket()
+        channel_id = None
+        gateway_id = None
 
         try:
             envelope.ParseFromString(payload)
             if envelope.HasField("packet"):
                 packet = envelope.packet
+                channel_id = envelope.channel_id
+                gateway_id = envelope.gateway_id
             else:
                 packet.ParseFromString(payload)
         except Exception:
@@ -135,6 +157,16 @@ class MQTTConsumer:
         rx_snr = packet.rx_snr if packet.rx_snr else None
         rx_rssi = packet.rx_rssi if packet.rx_rssi else None
 
+        # Uplink eligible packet to upstream public MQTT broker (mqtt.meshtastic.org)
+        # Enforces loop prevention (via_mqtt), OkToMQTT (bitfield bit 0), and IgnoreMQTT
+        if mqtt_uplink.is_enabled():
+            mqtt_uplink.uplink_packet(
+                incoming_topic=topic,
+                packet=packet,
+                channel_id=channel_id,
+                gateway_id=gateway_id,
+            )
+
         # Check decoded payload
         if not packet.HasField("decoded"):
             # Secondary channel encrypted packet: ignore cleartext extraction per privacy rules
@@ -145,11 +177,28 @@ class MQTTConsumer:
         sub_payload = decoded.payload
 
         # Schedule async processing in the main event loop
-        if self._loop and self._loop.is_running():
-            asyncio.run_coroutine_threadsafe(
-                self._dispatch_decoded(node_id, from_num, portnum, sub_payload, rx_snr, rx_rssi, hops_away),
-                self._loop,
-            )
+        target_loop = self._loop
+        if target_loop is None or not target_loop.is_running():
+            try:
+                target_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                target_loop = None
+
+        if target_loop and target_loop.is_running():
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+
+            if current_loop == target_loop:
+                asyncio.create_task(
+                    self._dispatch_decoded(node_id, from_num, portnum, sub_payload, rx_snr, rx_rssi, hops_away)
+                )
+            else:
+                asyncio.run_coroutine_threadsafe(
+                    self._dispatch_decoded(node_id, from_num, portnum, sub_payload, rx_snr, rx_rssi, hops_away),
+                    target_loop,
+                )
 
     async def _dispatch_decoded(
         self,
@@ -170,6 +219,7 @@ class MQTTConsumer:
                 long_name = user.long_name or f"Node {node_id}"
                 hw_model = mesh_pb2.HardwareModel.Name(user.hw_model) if user.hw_model else "UNKNOWN"
                 role = config_pb2.Config.DeviceConfig.Role.Name(user.role) if user.role else "CLIENT"
+                is_ignored = getattr(user, "is_ignored", False)
 
                 await state_manager.update_node_info(
                     node_id=node_id,
@@ -179,6 +229,7 @@ class MQTTConsumer:
                     role=role,
                     hw_model=hw_model,
                     source="mqtt",
+                    ignore_mqtt=is_ignored if is_ignored else None,
                 )
                 logger.info(f"MQTT NodeInfo: {short_name} ({long_name}) [{role}]")
             except Exception as e:

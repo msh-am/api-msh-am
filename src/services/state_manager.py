@@ -90,6 +90,7 @@ class StateManager:
                         "altitude": node_dict.get("altitude"),
                         "region": node_dict.get("region") or settings.DEFAULT_REGION,
                         "source": node_dict.get("source", "db"),
+                        "ignore_mqtt": bool(node_dict.get("ignore_mqtt", 0)),
                     }
                 logger.info(f"Loaded {len(self._nodes)} nodes from SQLite database.")
         except Exception as e:
@@ -101,6 +102,10 @@ class StateManager:
             return val
         return round(val, settings.FUZZING_DECIMALS)
 
+    def get_node_raw(self, node_id: str) -> Optional[Dict[str, Any]]:
+        """Return raw internal node dictionary including internal flags like ignore_mqtt."""
+        return self._nodes.get(node_id)
+
     async def update_node_info(
         self,
         node_id: str,
@@ -110,6 +115,7 @@ class StateManager:
         role: Optional[str] = None,
         hw_model: Optional[str] = None,
         source: str = "potatomesh",
+        ignore_mqtt: Optional[bool] = None,
     ) -> MeshNode:
         now_ms = int(time.time() * 1000)
 
@@ -136,6 +142,7 @@ class StateManager:
                 "altitude": existing.get("altitude"),
                 "region": existing.get("region", settings.DEFAULT_REGION),
                 "source": source,
+                "ignore_mqtt": ignore_mqtt if ignore_mqtt is not None else existing.get("ignore_mqtt", False),
             }
             self._nodes[node_id] = updated
 
@@ -146,8 +153,8 @@ class StateManager:
                 """
                 INSERT INTO nodes (
                     id, num, short_name, long_name, role, hw_model,
-                    last_heard, region, source, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    last_heard, region, source, ignore_mqtt, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     num = coalesce(excluded.num, nodes.num),
                     short_name = coalesce(excluded.short_name, nodes.short_name),
@@ -157,6 +164,7 @@ class StateManager:
                     last_heard = excluded.last_heard,
                     region = excluded.region,
                     source = excluded.source,
+                    ignore_mqtt = coalesce(excluded.ignore_mqtt, nodes.ignore_mqtt),
                     updated_at = excluded.updated_at;
                 """,
                 (
@@ -169,6 +177,7 @@ class StateManager:
                     now_ms,
                     updated["region"],
                     source,
+                    1 if updated["ignore_mqtt"] else 0,
                     now_ms,
                     now_ms,
                 ),
