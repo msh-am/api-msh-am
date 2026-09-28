@@ -106,3 +106,9 @@ async def test_mqtt_protobuf_dispatch():
     assert pos_node.latitude == pytest.approx(40.1792, rel=1e-4)
     assert pos_node.longitude == pytest.approx(44.4991, rel=1e-4)
     assert pos_node.region == "Yerevan"
+
+
+def test_default_mqtt_credentials():
+    assert settings.MQTT_USERNAME == "meshdev"
+    assert settings.MQTT_PASSWORD == "large4cats"
+

@@ -60,6 +60,8 @@ For community home nodes using standard Meshtastic firmware over Wi-Fi:
 - **No extra software needed**: Users simply toggle MQTT in the official Meshtastic app:
   - **Module Config** → **MQTT** → **ON**
   - **Server Address**: `mqtt.msh.am`
+  - **Username**: `meshdev` (default)
+  - **Password**: `large4cats` (default)
   - **Uplink Enabled**: `YES`
   - **Downlink Enabled**: `NO`
   - **Topic Root**: `msh/AM`

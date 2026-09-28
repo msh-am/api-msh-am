@@ -8,6 +8,7 @@ services:
       - "1883:1883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/passwd:/mosquitto/config/passwd:ro
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
 
@@ -23,6 +24,8 @@ services:
       - MQTT_ENABLED=true
       - MQTT_BROKER_HOST=mqtt
       - MQTT_BROKER_PORT=1883
+      - MQTT_USERNAME=${MQTT_USERNAME:-meshdev}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-large4cats}
       - MQTT_TOPIC_PREFIX=msh/AM/#
       - API_TOKEN=${API_TOKEN:-msh_armenia_super_secret_token}
       - DATABASE_PATH=/data/msh_am.sqlite3
