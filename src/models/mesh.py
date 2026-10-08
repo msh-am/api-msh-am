@@ -33,6 +33,8 @@ class MeshNode(BaseModel):
     altitude: Optional[float] = Field(None, description="Altitude in meters")
     region: str = Field("Armenia", description="Region name, e.g. Yerevan, Aragats, Sevan")
     isOnline: bool = Field(True, description="True if heard within the online threshold")
+    lastHeardBy: Optional[str] = Field(None, description="Gateway or node ID that heard this node")
+    heardBy: Optional[List[Dict[str, Any]]] = Field(None, description="Gateways/nodes that received packets from this node")
 
 
 class NodeListResponse(BaseModel):
@@ -117,6 +119,10 @@ class PotatoMessagePayload(BaseModel):
     channel: Optional[Any] = "0"
     hops: Optional[int] = 0
     timestamp: Optional[int] = None
+    rx_by: Optional[str] = None
+    gateway_id: Optional[str] = None
+    snr: Optional[float] = None
+    rssi: Optional[float] = None
 
 
 class PotatoNeighborPayload(BaseModel):

@@ -8,6 +8,7 @@ from __future__ import annotations
 import time
 import logging
 import asyncio
+import json
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
@@ -92,6 +93,8 @@ class StateManager:
                         "region": node_dict.get("region") or settings.DEFAULT_REGION,
                         "source": node_dict.get("source", "db"),
                         "ignore_mqtt": bool(node_dict.get("ignore_mqtt", 0)),
+                        "lastHeardBy": node_dict.get("last_heard_by"),
+                        "heardBy": json.loads(node_dict.get("heard_by")) if node_dict.get("heard_by") else None,
                     }
                 logger.info(f"Loaded {len(self._nodes)} active nodes from SQLite database (retention: {settings.NODE_RETENTION_SECONDS}s).")
         except Exception as e:
@@ -115,6 +118,7 @@ class StateManager:
         rssi: Optional[float] = None,
         hops: int = 0,
         source: str = "mqtt",
+        rx_by: Optional[str] = None,
     ) -> MeshNode:
         """Register or refresh node activity when any packet is heard."""
         now_ms = int(time.time() * 1000)
@@ -147,23 +151,46 @@ class StateManager:
                 if hops:
                     node["hopsAway"] = hops
 
+            node = self._nodes[node_id]
+            if rx_by:
+                node["lastHeardBy"] = rx_by
+                rx_node = self._nodes.get(rx_by, {})
+                entry = {
+                    "node_id": rx_by,
+                    "short_name": rx_node.get("shortName", rx_by[-4:].upper() if len(rx_by) >= 4 else "GW"),
+                    "long_name": rx_node.get("longName", f"Gateway {rx_by}"),
+                    "role": rx_node.get("role", "ROUTER"),
+                    "snr": snr,
+                    "rssi": rssi,
+                    "source": source,
+                    "timestamp": now_ms,
+                }
+                existing_heard = node.get("heardBy") or []
+                updated_heard = [h for h in existing_heard if h.get("node_id") != rx_by]
+                updated_heard.insert(0, entry)
+                node["heardBy"] = updated_heard[:10]
+
             node_copy = dict(self._nodes[node_id])
 
         with db_session() as conn:
             cursor = conn.cursor()
+            heard_by_json = json.dumps(node_copy.get("heardBy", []))
             cursor.execute(
                 """
                 INSERT INTO nodes (
                     id, num, short_name, long_name, role, hw_model,
-                    snr, rssi, hops_away, last_heard, region, source, created_at, updated_at
+                    snr, rssi, hops_away, last_heard, region, source,
+                    heard_by, last_heard_by, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     num = coalesce(excluded.num, nodes.num),
                     snr = coalesce(excluded.snr, nodes.snr),
                     rssi = coalesce(excluded.rssi, nodes.rssi),
                     hops_away = coalesce(excluded.hops_away, nodes.hops_away),
                     last_heard = excluded.last_heard,
+                    heard_by = coalesce(excluded.heard_by, nodes.heard_by),
+                    last_heard_by = coalesce(excluded.last_heard_by, nodes.last_heard_by),
                     updated_at = excluded.updated_at;
                 """,
                 (
@@ -179,6 +206,8 @@ class StateManager:
                     now_ms,
                     node_copy.get("region", settings.DEFAULT_REGION),
                     source,
+                    heard_by_json,
+                    node_copy.get("lastHeardBy"),
                     now_ms,
                     now_ms,
                 ),
@@ -472,33 +501,84 @@ class StateManager:
         hops: int = 0,
         timestamp: Optional[int] = None,
         msg_id: Optional[str] = None,
+        rx_by: Optional[str] = None,
+        snr: Optional[float] = None,
+        rssi: Optional[float] = None,
+        source: str = "mqtt",
     ) -> None:
         now_ms = timestamp or int(time.time() * 1000)
         message_id = msg_id or f"msg_{now_ms}_{from_id}"
 
+        rx_entry = None
+        if rx_by:
+            rx_node = self._nodes.get(rx_by, {})
+            rx_entry = {
+                "node_id": rx_by,
+                "short_name": rx_node.get("shortName", rx_by[-4:].upper() if len(rx_by) >= 4 else "GW"),
+                "long_name": rx_node.get("longName", f"Gateway {rx_by}"),
+                "role": rx_node.get("role", "ROUTER"),
+                "snr": snr,
+                "rssi": rssi,
+                "source": source,
+                "timestamp": now_ms,
+            }
+
         with db_session() as conn:
             cursor = conn.cursor()
+            # Deduplication: check if exact message id exists, or same sender/text received within 60s
             cursor.execute(
                 """
-                INSERT OR IGNORE INTO messages (id, from_id, to_id, text, channel, hops, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?);
+                SELECT id, heard_by FROM messages
+                WHERE (id = ? OR (from_id = ? AND text = ? AND timestamp >= ?))
+                ORDER BY timestamp DESC LIMIT 1;
                 """,
-                (message_id, from_id, to_id, text, str(channel), hops, now_ms),
+                (message_id, from_id, text, now_ms - 60000),
             )
+            existing = cursor.fetchone()
+            if existing:
+                existing_id, existing_heard_by_raw = existing
+                message_id = existing_id
+                try:
+                    heard_by_list = json.loads(existing_heard_by_raw) if existing_heard_by_raw else []
+                except Exception:
+                    heard_by_list = []
+
+                if rx_entry and not any(h.get("node_id") == rx_by for h in heard_by_list):
+                    heard_by_list.append(rx_entry)
+                    cursor.execute(
+                        "UPDATE messages SET heard_by = ? WHERE id = ?;",
+                        (json.dumps(heard_by_list), message_id),
+                    )
+            else:
+                heard_by_list = [rx_entry] if rx_entry else []
+                cursor.execute(
+                    """
+                    INSERT OR IGNORE INTO messages (id, from_id, to_id, text, channel, hops, timestamp, heard_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (message_id, from_id, to_id, text, str(channel), hops, now_ms, json.dumps(heard_by_list)),
+                )
+
+        sender = self._nodes.get(from_id, {})
+        broadcast_payload = {
+            "id": message_id,
+            "from_id": from_id,
+            "from_short_name": sender.get("shortName", from_id[-4:].upper() if len(from_id) >= 4 else "NODE"),
+            "from_long_name": sender.get("longName", f"Node {from_id}"),
+            "role": sender.get("role", "CLIENT"),
+            "latitude": sender.get("latitude"),
+            "longitude": sender.get("longitude"),
+            "region": sender.get("region", "Armenia"),
+            "to_id": to_id,
+            "text": text,
+            "channel": channel,
+            "hops": hops,
+            "timestamp": now_ms,
+            "heard_by": heard_by_list,
+        }
 
         asyncio.create_task(
-            sse_manager.broadcast(
-                "message",
-                {
-                    "id": message_id,
-                    "from_id": from_id,
-                    "to_id": to_id,
-                    "text": text,
-                    "channel": channel,
-                    "hops": hops,
-                    "timestamp": now_ms,
-                },
-            )
+            sse_manager.broadcast("message", broadcast_payload)
         )
 
     def _build_mesh_node(self, raw: Dict[str, Any]) -> MeshNode:
@@ -526,6 +606,8 @@ class StateManager:
             altitude=raw.get("altitude"),
             region=raw.get("region", settings.DEFAULT_REGION),
             isOnline=is_online,
+            lastHeardBy=raw.get("lastHeardBy"),
+            heardBy=raw.get("heardBy"),
         )
 
     def prune_expired_nodes(self) -> int:

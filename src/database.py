@@ -75,9 +75,17 @@ def init_db() -> None:
             );
         """)
 
-        # Migration check: ensure ignore_mqtt column exists
+        # Migration check: ensure ignore_mqtt, heard_by, last_heard_by columns exist
         try:
             cursor.execute("ALTER TABLE nodes ADD COLUMN ignore_mqtt INTEGER DEFAULT 0;")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE nodes ADD COLUMN heard_by TEXT DEFAULT '[]';")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE nodes ADD COLUMN last_heard_by TEXT;")
         except sqlite3.OperationalError:
             pass
 
@@ -120,9 +128,17 @@ def init_db() -> None:
                 text TEXT NOT NULL,
                 channel TEXT DEFAULT '0',
                 hops INTEGER DEFAULT 0,
-                timestamp INTEGER NOT NULL
+                timestamp INTEGER NOT NULL,
+                heard_by TEXT DEFAULT '[]'
             );
         """)
+
+        # Migration check: ensure heard_by column exists on messages
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN heard_by TEXT DEFAULT '[]';")
+        except sqlite3.OperationalError:
+            pass
+
 
         # Neighbors topology
         cursor.execute("""

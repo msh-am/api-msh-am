@@ -125,6 +125,10 @@ async def ingest_message(
         hops=payload.hops or 0,
         timestamp=payload.timestamp,
         msg_id=payload.id,
+        rx_by=payload.rx_by or payload.gateway_id,
+        snr=payload.snr,
+        rssi=payload.rssi,
+        source="potatomesh",
     )
     return {"status": "ok"}
 

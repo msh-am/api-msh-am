@@ -147,6 +147,20 @@ class MQTTConsumer:
                 logger.info(f"Could not parse packet on {topic} as ServiceEnvelope or MeshPacket: {e}")
                 return
 
+        # Extract or normalize gateway_id
+        if not gateway_id and topic:
+            parts = topic.split("/")
+            last_part = parts[-1] if parts else ""
+            if last_part.startswith("!"):
+                gateway_id = last_part
+            elif len(last_part) == 8 and all(c in "0123456789abcdefABCDEF" for c in last_part):
+                gateway_id = f"!{last_part.lower()}"
+
+        if gateway_id:
+            gateway_id = str(gateway_id).strip()
+            if not gateway_id.startswith("!") and len(gateway_id) <= 8:
+                gateway_id = f"!{gateway_id.lower()}"
+
         from_num = getattr(packet, "from")
         if not from_num:
             logger.info(f"Packet on {topic} has no from_num, ignoring")
@@ -208,11 +222,11 @@ class MQTTConsumer:
 
             if current_loop == target_loop:
                 asyncio.create_task(
-                    self._dispatch_decoded(node_id, from_num, portnum, sub_payload, rx_snr, rx_rssi, hops_away)
+                    self._dispatch_decoded(node_id, from_num, portnum, sub_payload, rx_snr, rx_rssi, hops_away, gateway_id)
                 )
             else:
                 asyncio.run_coroutine_threadsafe(
-                    self._dispatch_decoded(node_id, from_num, portnum, sub_payload, rx_snr, rx_rssi, hops_away),
+                    self._dispatch_decoded(node_id, from_num, portnum, sub_payload, rx_snr, rx_rssi, hops_away, gateway_id),
                     target_loop,
                 )
 
@@ -225,6 +239,7 @@ class MQTTConsumer:
         snr: Optional[float],
         rssi: Optional[float],
         hops: int,
+        gateway_id: Optional[str] = None,
     ) -> None:
         # Always register / refresh node activity on any received packet
         await state_manager.touch_node(
@@ -234,6 +249,7 @@ class MQTTConsumer:
             rssi=rssi,
             hops=hops,
             source="mqtt",
+            rx_by=gateway_id,
         )
 
         # 1. NODEINFO_APP
@@ -324,8 +340,12 @@ class MQTTConsumer:
                     from_id=node_id,
                     text=text,
                     hops=hops,
+                    rx_by=gateway_id,
+                    snr=snr,
+                    rssi=rssi,
+                    source="mqtt",
                 )
-                logger.info(f"MQTT Public Message from {node_id}: {text}")
+                logger.info(f"MQTT Public Message from {node_id}: {text} (gateway={gateway_id})")
             except Exception as e:
                 logger.debug(f"Error parsing TEXT_MESSAGE_APP: {e}")
 
